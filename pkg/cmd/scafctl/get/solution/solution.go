@@ -26,17 +26,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ValidOutputTypes = []string{"json", "yaml", "table"}
-
 type GetLatestVersionFunc func(ctx context.Context) (string, error)
 
 type CmdOptionsVersion struct {
-	IOStreams *terminal.IOStreams
-	CliParams *settings.Run
-	Output    string
-	File      string
-	NoCache   bool
-	Local     bool
+	IOStreams      *terminal.IOStreams
+	CliParams      *settings.Run
+	KvxOutputFlags flags.KvxOutputFlags
+	File           string
+	NoCache        bool
+	Local          bool
 }
 
 func CommandSolution(cliParams *settings.Run, ioStreams *terminal.IOStreams, path string) *cobra.Command {
@@ -95,18 +93,6 @@ Examples:
 				options.File = args[0]
 			}
 
-			err := output.ValidateOutputType(options.Output, ValidOutputTypes)
-			if err != nil {
-				output.NewWriteMessageOptions(
-					options.IOStreams,
-					output.MessageTypeError,
-					options.CliParams.NoColor,
-					options.CliParams.ExitOnError,
-				).WriteMessage(err.Error())
-
-				return exitcode.WithCode(err, exitcode.InvalidInput)
-			}
-
 			// No args, no --file, and not --local: list solutions from catalog
 			if len(args) == 0 && options.File == "" && !options.Local {
 				return options.ListSolutions(ctx)
@@ -116,7 +102,7 @@ Examples:
 		},
 		SilenceUsage: true,
 	}
-	cCmd.PersistentFlags().StringVarP(&options.Output, "output", "o", "", fmt.Sprintf("Output format. One of: (%s)", strings.Join(ValidOutputTypes, ", ")))
+	flags.AddKvxOutputFlagsToStruct(cCmd, &options.KvxOutputFlags)
 	cCmd.PersistentFlags().StringVarP(&options.File, "file", "f", "", "Path to the solution. This can be a local file path or a URL. If not provided and no arguments given, lists catalog solutions.")
 	cCmd.PersistentFlags().BoolVar(&options.NoCache, "no-cache", false, "Bypass the artifact cache and fetch directly from the catalog")
 	cCmd.PersistentFlags().BoolVar(&options.Local, "local", false, "Auto-discover and display a solution from the current directory")
@@ -179,30 +165,24 @@ func (o *CmdOptionsVersion) GetSolutionWithGetter(ctx context.Context, getter ge
 		return exitcode.WithCode(err, exitcode.FileNotFound)
 	}
 
-	// For json/yaml, use the direct output writer. For table or default,
-	// use kvx which provides table rendering.
-	switch o.Output {
-	case "json", "yaml":
-		err = output.WriteOutput(o.IOStreams, o.Output, sol, nil)
-	default:
-		// Default / table: use kvx for structured table output
-		format := o.Output
-		if format == "" {
-			format = "auto"
-		}
-		kvxOpts := flags.NewKvxOutputOptionsFromFlags(
-			format,
-			false,
-			"",
-			kvx.WithOutputContext(ctx),
-			kvx.WithOutputNoColor(o.CliParams.NoColor),
-			kvx.WithOutputAppName(o.CliParams.BinaryName+" get solution"),
-		)
-		kvxOpts.IOStreams = o.IOStreams
-		err = kvxOpts.Write(newSolutionSummary(sol))
+	kvxOpts := flags.ToKvxOutputOptions(&o.KvxOutputFlags,
+		kvx.WithIOStreams(o.IOStreams),
+		kvx.WithOutputContext(ctx),
+		kvx.WithOutputNoColor(o.CliParams.NoColor),
+		kvx.WithOutputAppName(o.CliParams.BinaryName+" get solution"),
+	)
+
+	// Structured formats (json/yaml/csv/toml): emit the full solution.
+	// Explicit table/list: emit the full solution.
+	// Auto (default): emit the summary for a compact view.
+	var outputData any
+	if kvx.IsStructuredFormat(kvxOpts.Format) || o.KvxOutputFlags.FormatExplicit {
+		outputData = sol
+	} else {
+		outputData = newSolutionSummary(sol)
 	}
 
-	if err != nil {
+	if err := kvxOpts.Write(outputData); err != nil {
 		if w != nil {
 			w.Errorf("%v", err)
 		}
@@ -251,19 +231,12 @@ func (o *CmdOptionsVersion) ListSolutions(ctx context.Context) error {
 
 	items := deduplicateAndFormatSolutions(artifacts)
 
-	format := o.Output
-	if format == "" {
-		format = "auto"
-	}
-	kvxOpts := flags.NewKvxOutputOptionsFromFlags(
-		format,
-		false,
-		"",
+	kvxOpts := flags.ToKvxOutputOptions(&o.KvxOutputFlags,
+		kvx.WithIOStreams(o.IOStreams),
 		kvx.WithOutputContext(ctx),
 		kvx.WithOutputNoColor(o.CliParams.NoColor),
 		kvx.WithOutputAppName(o.CliParams.BinaryName+" get solution"),
 	)
-	kvxOpts.IOStreams = o.IOStreams
 	return kvxOpts.Write(items)
 }
 

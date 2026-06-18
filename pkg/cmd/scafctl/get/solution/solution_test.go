@@ -15,6 +15,7 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/go-logr/logr"
 	"github.com/oakwood-commons/scafctl/pkg/catalog"
+	"github.com/oakwood-commons/scafctl/pkg/cmd/flags"
 	"github.com/oakwood-commons/scafctl/pkg/exitcode"
 	"github.com/oakwood-commons/scafctl/pkg/settings"
 	solutionpkg "github.com/oakwood-commons/scafctl/pkg/solution"
@@ -55,8 +56,8 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 			CliParams: &settings.Run{
 				NoColor: true,
 			},
-			Output: "json",
-			File:   "/path/to/solution.yaml",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
+			File:           "/path/to/solution.yaml",
 		}
 
 		err := options.GetSolutionWithGetter(context.Background(), mockGetter)
@@ -92,8 +93,8 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 			CliParams: &settings.Run{
 				NoColor: true,
 			},
-			Output: "yaml",
-			File:   "https://example.com/solution.yaml",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "yaml"},
+			File:           "https://example.com/solution.yaml",
 		}
 
 		err := options.GetSolutionWithGetter(context.Background(), mockGetter)
@@ -129,8 +130,8 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 			CliParams: &settings.Run{
 				NoColor: true,
 			},
-			Output: "json",
-			File:   "",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
+			File:           "",
 		}
 
 		err := options.GetSolutionWithGetter(context.Background(), mockGetter)
@@ -160,8 +161,8 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 			CliParams: &settings.Run{
 				NoColor: true,
 			},
-			Output: "json",
-			File:   "/invalid/path",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
+			File:           "/invalid/path",
 		}
 
 		w := writer.New(ioStreams, options.CliParams)
@@ -202,8 +203,8 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 			CliParams: &settings.Run{
 				NoColor: true,
 			},
-			Output: "json",
-			File:   "/path/to/solution.yaml",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
+			File:           "/path/to/solution.yaml",
 		}
 
 		err := options.GetSolutionWithGetter(context.Background(), mockGetter)
@@ -242,10 +243,10 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 		}
 
 		options := &CmdOptionsVersion{
-			IOStreams: ioStreams,
-			CliParams: cliParams,
-			Output:    "json",
-			File:      "/path/to/solution.yaml",
+			IOStreams:      ioStreams,
+			CliParams:      cliParams,
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
+			File:           "/path/to/solution.yaml",
 		}
 
 		err := options.GetSolutionWithGetter(ctx, mockGetter)
@@ -282,8 +283,8 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 				NoColor:    true,
 				BinaryName: "scafctl",
 			},
-			Output: "",
-			File:   "/path/to/solution.yaml",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "auto"},
+			File:           "/path/to/solution.yaml",
 		}
 
 		err := options.GetSolutionWithGetter(context.Background(), mockGetter)
@@ -320,8 +321,8 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 				NoColor:    true,
 				BinaryName: "scafctl",
 			},
-			Output: "table",
-			File:   "/path/to/solution.yaml",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "table", FormatExplicit: true},
+			File:           "/path/to/solution.yaml",
 		}
 
 		err := options.GetSolutionWithGetter(context.Background(), mockGetter)
@@ -358,8 +359,8 @@ func TestCmdOptionsVersion_GetSolutionWithGetter(t *testing.T) {
 			CliParams: &settings.Run{
 				NoColor: true,
 			},
-			Output: "yaml",
-			File:   "/path/to/complex.yaml",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "yaml"},
+			File:           "/path/to/complex.yaml",
 		}
 
 		err := options.GetSolutionWithGetter(context.Background(), mockGetter)
@@ -387,8 +388,8 @@ func TestCmdOptionsVersion_GetSolution(t *testing.T) {
 			CliParams: &settings.Run{
 				NoColor: true,
 			},
-			Output: "json",
-			File:   "/nonexistent/solution.yaml",
+			KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
+			File:           "/nonexistent/solution.yaml",
 		}
 
 		err := options.GetSolution(context.Background())
@@ -509,7 +510,7 @@ func TestListSolutions_OutputFormat(t *testing.T) {
 			NoColor:    true,
 			BinaryName: "testcli",
 		},
-		Output: "json",
+		KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
 	}
 
 	w := writer.New(ioStreams, options.CliParams)
@@ -558,7 +559,7 @@ func TestListSolutions_WithLocalArtifacts(t *testing.T) {
 			NoColor:    true,
 			BinaryName: "testcli",
 		},
-		Output: "json",
+		KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
 	}
 
 	w := writer.New(ioStreams, options.CliParams)
@@ -612,7 +613,7 @@ func TestListSolutions_WithMultipleArtifacts(t *testing.T) {
 			NoColor:    true,
 			BinaryName: "testcli",
 		},
-		Output: "json",
+		KvxOutputFlags: flags.KvxOutputFlags{Output: "json"},
 	}
 
 	w := writer.New(ioStreams, options.CliParams)

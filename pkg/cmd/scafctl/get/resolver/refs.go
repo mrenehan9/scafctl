@@ -5,33 +5,33 @@ package resolver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/oakwood-commons/scafctl/pkg/cmd/flags"
 	"github.com/oakwood-commons/scafctl/pkg/exitcode"
 	"github.com/oakwood-commons/scafctl/pkg/logger"
 	refslib "github.com/oakwood-commons/scafctl/pkg/resolver/refs"
 	"github.com/oakwood-commons/scafctl/pkg/settings"
 	"github.com/oakwood-commons/scafctl/pkg/terminal"
+	"github.com/oakwood-commons/scafctl/pkg/terminal/kvx"
 	"github.com/oakwood-commons/scafctl/pkg/terminal/writer"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 // RefsOptions holds options for the refs command
 type RefsOptions struct {
-	TemplateFile string
-	Template     string
-	Expr         string
-	LeftDelim    string
-	RightDelim   string
-	Output       string
+	TemplateFile   string
+	Template       string
+	Expr           string
+	LeftDelim      string
+	RightDelim     string
+	KvxOutputFlags flags.KvxOutputFlags
 }
 
 // CommandRefs creates the resolver refs command
-func CommandRefs(_ *settings.Run, ioStreams *terminal.IOStreams, binaryName string) *cobra.Command {
+func CommandRefs(cliParams *settings.Run, ioStreams *terminal.IOStreams, binaryName string) *cobra.Command {
 	opts := &RefsOptions{}
 
 	cmd := &cobra.Command{
@@ -81,7 +81,7 @@ func CommandRefs(_ *settings.Run, ioStreams *terminal.IOStreams, binaryName stri
 			$ echo '_.config.host' | %[1]s get resolver refs --expr -
 		`, binaryName),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRefs(cmd.Context(), opts, ioStreams)
+			return runRefs(cmd.Context(), opts, cliParams, ioStreams)
 		},
 	}
 
@@ -90,12 +90,12 @@ func CommandRefs(_ *settings.Run, ioStreams *terminal.IOStreams, binaryName stri
 	cmd.Flags().StringVar(&opts.Expr, "expr", "", "Inline CEL expression (use '-' to read from stdin)")
 	cmd.Flags().StringVar(&opts.LeftDelim, "left-delim", "{{", "Left delimiter for Go templates")
 	cmd.Flags().StringVar(&opts.RightDelim, "right-delim", "}}", "Right delimiter for Go templates")
-	cmd.Flags().StringVarP(&opts.Output, "output", "o", "text", "Output format: text, json, yaml")
+	flags.AddKvxOutputFlagsToStruct(cmd, &opts.KvxOutputFlags)
 
 	return cmd
 }
 
-func runRefs(ctx context.Context, opts *RefsOptions, ioStreams *terminal.IOStreams) error {
+func runRefs(ctx context.Context, opts *RefsOptions, cliParams *settings.Run, ioStreams *terminal.IOStreams) error {
 	lgr := logger.FromContext(ctx)
 	w := writer.FromContext(ctx)
 
@@ -176,47 +176,60 @@ func runRefs(ctx context.Context, opts *RefsOptions, ioStreams *terminal.IOStrea
 	// Sort refs for consistent output
 	sort.Strings(refs)
 
-	output := refslib.Output{
+	result := refslib.Output{
 		Source:     source,
 		SourceType: sourceType,
 		References: refs,
 		Count:      len(refs),
 	}
 
-	return writeOutput(ctx, ioStreams, opts.Output, output)
-}
+	kvxOpts := flags.ToKvxOutputOptions(&opts.KvxOutputFlags,
+		kvx.WithIOStreams(ioStreams),
+		kvx.WithOutputContext(ctx),
+		kvx.WithOutputNoColor(cliParams.NoColor),
+		kvx.WithOutputAppName(cliParams.BinaryName+" get resolver refs"),
+	)
 
-func writeOutput(ctx context.Context, ioStreams *terminal.IOStreams, format string, output refslib.Output) error {
-	switch format {
-	case "json":
-		enc := json.NewEncoder(ioStreams.Out)
-		enc.SetIndent("", "  ")
-		return enc.Encode(output)
+	// For structured formats (json/yaml/csv/toml), emit the full output struct.
+	// For non-structured formats with explicit user choice (table/list), emit just the references.
+	// For auto (default), use the existing text rendering.
+	if kvx.IsStructuredFormat(kvxOpts.Format) {
+		return kvxOpts.Write(result)
+	}
 
-	case "yaml":
-		enc := yaml.NewEncoder(ioStreams.Out)
-		enc.SetIndent(2)
-		return enc.Encode(output)
+	if opts.KvxOutputFlags.FormatExplicit || opts.KvxOutputFlags.Interactive ||
+		opts.KvxOutputFlags.Expression != "" || opts.KvxOutputFlags.Where != "" {
+		// User requested kvx rendering (explicit -o, interactive, or output filters) --
+		// project references into structured rows so KVX renders them as a proper table.
+		return kvxOpts.Write(projectRefs(result.References))
+	}
 
-	case "text":
-		if len(output.References) == 0 {
-			if w := writer.FromContext(ctx); w != nil {
-				w.Plainln("No resolver references found.")
-			}
-			return nil
-		}
-
-		w := writer.FromContext(ctx)
+	// Auto mode: use the original text rendering
+	if len(result.References) == 0 {
 		if w != nil {
-			w.Plainlnf("Resolver references found in %s:", output.SourceType)
-			for _, ref := range output.References {
-				w.Plainlnf("  - %s", ref)
-			}
-			w.Plainlnf("\nTotal: %d reference(s)", output.Count)
+			w.Plainln("No resolver references found.")
 		}
 		return nil
-
-	default:
-		return exitcode.WithCode(fmt.Errorf("unknown output format: %s (supported: text, json, yaml)", format), exitcode.InvalidInput)
 	}
+
+	if w != nil {
+		w.Plainlnf("Resolver references found in %s:", result.SourceType)
+		for _, ref := range result.References {
+			w.Plainlnf("  - %s", ref)
+		}
+		w.Plainlnf("\nTotal: %d reference(s)", result.Count)
+	}
+	return nil
+}
+
+// projectRefs converts a string slice of resolver references into structured
+// rows so KVX can render them as a proper columnar table.
+func projectRefs(refs []string) []any {
+	rows := make([]any, len(refs))
+	for i, ref := range refs {
+		rows[i] = map[string]any{
+			"resolver": ref,
+		}
+	}
+	return rows
 }

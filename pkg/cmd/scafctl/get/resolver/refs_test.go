@@ -209,7 +209,7 @@ func TestCommandRefs_Validation(t *testing.T) {
 		{
 			name:        "invalid output format",
 			args:        []string{"--template", "{{ ._.foo }}", "-o", "xml"},
-			expectedErr: "unknown output format: xml",
+			expectedErr: "invalid output format: xml",
 		},
 	}
 
